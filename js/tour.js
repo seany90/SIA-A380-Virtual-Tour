@@ -196,18 +196,7 @@
     const pending = textureInflight.get(url);
     if (pending) return pending;
 
-    const task = (
-      typeof createImageBitmap === 'function'
-        ? fetch(url, { cache: 'force-cache' })
-            .then((response) => {
-              if (!response.ok) throw new Error('Failed to load ' + url);
-              return response.blob();
-            })
-            .then((blob) => createImageBitmap(blob))
-            .then((bitmap) => configureTexture(new THREE.Texture(bitmap)))
-            .catch(() => loadFromImageElement(url))
-        : loadFromImageElement(url)
-    ).then((texture) => {
+    const task = loadFromImageElement(url).then((texture) => {
       textureCache.set(url, texture);
       textureInflight.delete(url);
       return texture;
