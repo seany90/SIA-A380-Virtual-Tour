@@ -1,0 +1,12 @@
+{
+  "name": "sia-a380-virtual-tour",
+  "version": "1.0.0",
+  "description": "Singapore Airlines A380 360-degree Interactive Virtual Tour",
+  "scripts": {
+    "start": "start http://localhost:8080 && python -m http.server 8080",
+    "dev": "start http://localhost:8080 && python -m http.server 8080"
+  },
+  "keywords": ["360-tour", "virtual-tour", "threejs", "a380", "webgl"],
+  "author": "",
+  "license": "MIT"
+}
