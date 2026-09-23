@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a1324">
   <title>Singapore Airlines A380 - Interactive 360° Virtual Tour</title>
   
   <!-- Stylesheet -->
@@ -20,7 +21,7 @@
   <!-- Loading Screen -->
   <div id="loading-overlay">
     <div class="spinner"></div>
-    <div style="font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--sia-gold);">
+    <div class="loading-copy">
       Boarding SIA A380 Experience...
     </div>
   </div>
@@ -45,7 +46,7 @@
     <button class="util-btn" title="Toggle Cabin Sound" onclick="toggleAudio()" id="btn-audio">🔊</button>
     <button class="util-btn" title="Toggle Auto-Rotate" onclick="toggleAutoRotate()" id="btn-rotate">🔄</button>
     <button class="util-btn overview-toggle" title="Business Class Top View" aria-label="Open Business Class top-down view" aria-expanded="false" onclick="toggleBusinessOverview()" id="btn-business-overview" hidden>🗺️</button>
-    <button class="util-btn" title="Fullscreen" onclick="toggleFullscreen()">⛶</button>
+    <button class="util-btn util-fullscreen" title="Fullscreen" onclick="toggleFullscreen()">⛶</button>
   </div>
 
   <!-- Interactive Business Class Top-Down Navigator -->
@@ -118,13 +119,37 @@
   </div>
 
   <!-- Cabin Classes Bottom Navigation Bar -->
-  <nav class="cabin-bar" id="cabin-bar">
-    <button class="cabin-btn active" onclick="selectScene('suites_upright')">👑 Suites</button>
-    <button class="cabin-btn" onclick="selectScene('suites_lav')">🚿 Suites Lavatory</button>
-    <button class="cabin-btn" onclick="selectScene('business_upright')">💼 Business Class</button>
-    <button class="cabin-btn" onclick="selectScene('prem_econ')">🌟 Premium Economy</button>
-    <button class="cabin-btn" onclick="selectScene('economy')">✈️ Economy Class</button>
-    <button class="cabin-btn" onclick="selectScene('d1')">🚪 Entrance Door 1</button>
+  <nav class="cabin-bar" id="cabin-bar" aria-label="Cabin classes">
+    <button class="cabin-btn active" data-scene="suites" onclick="selectScene('suites_upright')">
+      <span aria-hidden="true">👑</span>
+      <span class="label-long">Suites</span>
+      <span class="label-short">Suites</span>
+    </button>
+    <button class="cabin-btn" data-scene="lav" onclick="selectScene('suites_lav')">
+      <span aria-hidden="true">🚿</span>
+      <span class="label-long">Suites Lavatory</span>
+      <span class="label-short">Lavatory</span>
+    </button>
+    <button class="cabin-btn" data-scene="business" onclick="selectScene('business_upright')">
+      <span aria-hidden="true">💼</span>
+      <span class="label-long">Business Class</span>
+      <span class="label-short">Business</span>
+    </button>
+    <button class="cabin-btn" data-scene="prem_econ" onclick="selectScene('prem_econ')">
+      <span aria-hidden="true">🌟</span>
+      <span class="label-long">Premium Economy</span>
+      <span class="label-short">Premium</span>
+    </button>
+    <button class="cabin-btn" data-scene="economy" onclick="selectScene('economy')">
+      <span aria-hidden="true">✈️</span>
+      <span class="label-long">Economy Class</span>
+      <span class="label-short">Economy</span>
+    </button>
+    <button class="cabin-btn" data-scene="d1" onclick="selectScene('d1')">
+      <span aria-hidden="true">🚪</span>
+      <span class="label-long">Entrance Door 1</span>
+      <span class="label-short">Entrance</span>
+    </button>
   </nav>
 
   <!-- Interactive Mattertag Feature Details Modal -->

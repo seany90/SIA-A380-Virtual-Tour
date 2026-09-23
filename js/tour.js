@@ -26,9 +26,21 @@
   const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1100);
   camera.target = new THREE.Vector3(0, 0, 0);
 
+  function getViewportSize() {
+    const view = window.visualViewport;
+    const width = container.clientWidth || (view ? view.width : window.innerWidth);
+    const height = container.clientHeight || (view ? view.height : window.innerHeight);
+    return {
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height))
+    };
+  }
+
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  const initialView = getViewportSize();
+  camera.aspect = initialView.width / initialView.height;
+  renderer.setSize(initialView.width, initialView.height);
   container.appendChild(renderer.domElement);
 
   // Dual Sphere Crossfader (Smooth Crossfading between 360 nodes)
@@ -202,13 +214,13 @@
     }
 
     document.querySelectorAll('.cabin-btn').forEach(btn => {
-      const text = btn.innerText.toLowerCase();
-      const active = (currentSceneId.includes('suite') && text.includes('suite') && !text.includes('lav')) ||
-                     (currentSceneId.includes('lav') && text.includes('lav')) ||
-                     (currentSceneId.includes('business') && text.includes('business')) ||
-                     (currentSceneId.includes('prem_econ') && text.includes('premium')) ||
-                     (currentSceneId.includes('economy') && text.includes('economy')) ||
-                     (currentSceneId === 'd1' && text.includes('entrance'));
+      const scene = btn.dataset.scene;
+      const active = (scene === 'suites' && currentSceneId.includes('suite') && !currentSceneId.includes('lav')) ||
+                     (scene === 'lav' && currentSceneId.includes('lav')) ||
+                     (scene === 'business' && currentSceneId.includes('business')) ||
+                     (scene === 'prem_econ' && currentSceneId.includes('prem_econ')) ||
+                     (scene === 'economy' && currentSceneId.includes('economy')) ||
+                     (scene === 'd1' && currentSceneId === 'd1');
       btn.classList.toggle('active', active);
     });
 
@@ -284,8 +296,8 @@
 
       const pin = document.createElement('div');
       pin.className = 'map-hotspot';
-      pin.style.left = node.mapPos.x + 'px';
-      pin.style.top = node.mapPos.y + 'px';
+      pin.style.left = ((node.mapPos.x / 200) * 100) + '%';
+      pin.style.top = ((node.mapPos.y / 80) * 100) + '%';
       pin.title = node.name;
       pin.onclick = (e) => {
         e.stopPropagation();
@@ -299,9 +311,9 @@
     const node = window.CABIN_NODES[currentSceneId];
     if (!node) return;
     const radar = document.getElementById('radar-indicator');
-    radar.style.left = (node.mapPos.x - 16) + 'px';
-    radar.style.top = (node.mapPos.y - 16) + 'px';
-    radar.style.transform = `rotate(${lon + 90}deg)`;
+    radar.style.left = ((node.mapPos.x / 200) * 100) + '%';
+    radar.style.top = ((node.mapPos.y / 80) * 100) + '%';
+    radar.style.transform = `translate(-50%, -50%) rotate(${lon + 90}deg)`;
   }
 
   // 3D Spatial Hotspots
@@ -348,9 +360,10 @@
     activeHotspots.forEach(item => {
       const v = item.pos.clone().project(camera);
       if (v.z < 1) {
+        const view = getViewportSize();
         item.el.style.display = 'block';
-        const x = (v.x * 0.5 + 0.5) * window.innerWidth;
-        const y = (-(v.y * 0.5) + 0.5) * window.innerHeight;
+        const x = (v.x * 0.5 + 0.5) * view.width;
+        const y = (-(v.y * 0.5) + 0.5) * view.height;
         item.el.style.left = `${x}px`;
         item.el.style.top = `${y}px`;
       } else {
@@ -473,12 +486,18 @@
     updateRadar();
   }
 
-  // Resize
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+  function syncRendererSize() {
+    const view = getViewportSize();
+    camera.aspect = view.width / view.height;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+    renderer.setSize(view.width, view.height);
+  }
+
+  window.addEventListener('resize', syncRendererSize);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncRendererSize);
+    window.visualViewport.addEventListener('scroll', syncRendererSize);
+  }
 
   // Init
   renderMinimapPins();
