@@ -499,6 +499,11 @@
     window.visualViewport.addEventListener('scroll', syncRendererSize);
   }
 
+  document.addEventListener('touchmove', (event) => {
+    if (event.target.closest('.feature-modal, .business-overview-dialog')) return;
+    event.preventDefault();
+  }, { passive: false });
+
   // Init
   renderMinimapPins();
   window.selectScene('suites_upright');
