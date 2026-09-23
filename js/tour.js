@@ -10,8 +10,11 @@
   let audioPlaying = false;
   let audioContext = null;
   let sceneRequestId = 0;
-  let crossfadeInterval = null;
   let cameraTween = null;
+  let crossfade = null;
+  const textureCache = new Map();
+  const textureInflight = new Map();
+  const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
 
   // DOM Elements
   const container = document.getElementById('canvas-container');
@@ -26,25 +29,36 @@
   const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1100);
   camera.target = new THREE.Vector3(0, 0, 0);
 
+  let viewportSize = { width: window.innerWidth, height: window.innerHeight };
+
   function getViewportSize() {
+    return viewportSize;
+  }
+
+  function measureViewport() {
     const view = window.visualViewport;
     const width = container.clientWidth || (view ? view.width : window.innerWidth);
     const height = container.clientHeight || (view ? view.height : window.innerHeight);
-    return {
+    viewportSize = {
       width: Math.max(1, Math.round(width)),
       height: Math.max(1, Math.round(height))
     };
+    return viewportSize;
   }
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  const initialView = getViewportSize();
+  const renderer = new THREE.WebGLRenderer({
+    antialias: !isTouchDevice,
+    alpha: false,
+    powerPreference: 'high-performance'
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.25 : 2));
+  const initialView = measureViewport();
   camera.aspect = initialView.width / initialView.height;
   renderer.setSize(initialView.width, initialView.height);
   container.appendChild(renderer.domElement);
 
   // Dual Sphere Crossfader (Smooth Crossfading between 360 nodes)
-  const sphereGeo = new THREE.SphereGeometry(500, 60, 40);
+  const sphereGeo = new THREE.SphereGeometry(500, isTouchDevice ? 40 : 60, isTouchDevice ? 24 : 40);
   sphereGeo.scale(-1, 1, 1);
 
   const mat1 = new THREE.MeshBasicMaterial({ transparent: true, opacity: 1 });
@@ -54,10 +68,12 @@
   const mat2 = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
   const sphere2 = new THREE.Mesh(sphereGeo, mat2);
   scene.add(sphere2);
+  sphere2.visible = false;
 
   let activeSphere = 1;
   const textureLoader = new THREE.TextureLoader();
   textureLoader.setCrossOrigin('anonymous');
+  const hotspotProj = new THREE.Vector3();
 
   // Camera Orbit & Pan Controls
   let isUserInteracting = false;
@@ -98,7 +114,7 @@
     if (!view) return;
     cameraTween = {
       startedAt: performance.now(),
-      duration: view.duration || 950,
+      duration: isTouchDevice ? Math.min(view.duration || 620, 620) : (view.duration || 950),
       startLon: lon,
       deltaLon: shortestAngleDelta(lon, view.lon),
       startLat: lat,
@@ -126,52 +142,97 @@
 
     updateUI(node);
 
-    loadTextureWithFallback(node.pano, node.fallback, (texture) => {
-      // A slower, earlier texture request must never replace the latest choice.
-      if (requestId !== sceneRequestId) {
-        texture.dispose();
-        return;
-      }
+    loadTexture(node.pano)
+      .catch(() => loadTexture(node.fallback))
+      .then((texture) => {
+        if (requestId !== sceneRequestId) return;
 
-      texture.generateMipmaps = false;
-      texture.minFilter = THREE.LinearFilter;
+        const targetSphere = activeSphere === 1 ? sphere2 : sphere1;
+        const currentSphere = activeSphere === 1 ? sphere1 : sphere2;
+        const targetMat = targetSphere.material;
+        const currentMat = currentSphere.material;
 
-      const targetSphere = activeSphere === 1 ? sphere2 : sphere1;
-      const currentSphere = activeSphere === 1 ? sphere1 : sphere2;
-      const targetMat = targetSphere.material;
-      const currentMat = currentSphere.material;
+        targetMat.map = texture;
+        targetMat.needsUpdate = true;
+        targetSphere.visible = true;
 
-      targetMat.map = texture;
-      targetMat.needsUpdate = true;
+        crossfade = {
+          fromMat: currentMat,
+          toMat: targetMat,
+          fromSphere: currentSphere,
+          toSphere: targetSphere,
+          startedAt: performance.now(),
+          duration: isTouchDevice ? 260 : 360
+        };
 
-      if (crossfadeInterval) clearInterval(crossfadeInterval);
-      let progress = 0;
-      crossfadeInterval = setInterval(() => {
-        progress += 0.05;
-        targetMat.opacity = Math.min(1, progress);
-        currentMat.opacity = Math.max(0, 1 - progress);
-        if (progress >= 1) {
-          clearInterval(crossfadeInterval);
-          crossfadeInterval = null;
-          activeSphere = activeSphere === 1 ? 2 : 1;
-          loadingOverlay.style.opacity = '0';
-          setTimeout(() => { loadingOverlay.style.display = 'none'; }, 600);
-        }
-      }, 16);
-    });
+        loadingOverlay.style.opacity = '0';
+        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 280);
+        preloadRelated(node);
+      })
+      .catch(() => {});
 
     renderHotspots(node.hotspots || []);
   };
 
-  function loadTextureWithFallback(localUrl, remoteUrl, callback) {
-    textureLoader.load(
-      localUrl,
-      (tex) => callback(tex),
-      undefined,
-      () => {
-        textureLoader.load(remoteUrl, (tex) => callback(tex));
-      }
-    );
+  function configureTexture(texture) {
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.anisotropy = 1;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function loadFromImageElement(url) {
+    return new Promise((resolve, reject) => {
+      textureLoader.load(url, (tex) => resolve(configureTexture(tex)), undefined, reject);
+    });
+  }
+
+  function loadTexture(url) {
+    if (!url) return Promise.reject(new Error('Missing panorama'));
+    const cached = textureCache.get(url);
+    if (cached) return Promise.resolve(cached);
+    const pending = textureInflight.get(url);
+    if (pending) return pending;
+
+    const task = (
+      typeof createImageBitmap === 'function'
+        ? fetch(url, { cache: 'force-cache' })
+            .then((response) => {
+              if (!response.ok) throw new Error('Failed to load ' + url);
+              return response.blob();
+            })
+            .then((blob) => createImageBitmap(blob))
+            .then((bitmap) => configureTexture(new THREE.Texture(bitmap)))
+            .catch(() => loadFromImageElement(url))
+        : loadFromImageElement(url)
+    ).then((texture) => {
+      textureCache.set(url, texture);
+      textureInflight.delete(url);
+      return texture;
+    }).catch((error) => {
+      textureInflight.delete(url);
+      throw error;
+    });
+
+    textureInflight.set(url, task);
+    return task;
+  }
+
+  function preloadRelated(node) {
+    const urls = new Set();
+    (node.states || []).forEach((state) => {
+      const related = window.CABIN_NODES[state.id];
+      if (related) urls.add(related.pano);
+    });
+    (node.hotspots || []).forEach((hotspot) => {
+      const related = hotspot.target && window.CABIN_NODES[hotspot.target];
+      if (related) urls.add(related.pano);
+    });
+    urls.forEach((url) => {
+      if (url && !textureCache.has(url)) loadTexture(url).catch(() => {});
+    });
   }
 
   // Deck Switcher
@@ -357,15 +418,13 @@
   }
 
   function updateHotspotProjections() {
+    const view = viewportSize;
     activeHotspots.forEach(item => {
-      const v = item.pos.clone().project(camera);
-      if (v.z < 1) {
-        const view = getViewportSize();
+      hotspotProj.copy(item.pos).project(camera);
+      if (hotspotProj.z < 1) {
         item.el.style.display = 'block';
-        const x = (v.x * 0.5 + 0.5) * view.width;
-        const y = (-(v.y * 0.5) + 0.5) * view.height;
-        item.el.style.left = `${x}px`;
-        item.el.style.top = `${y}px`;
+        item.el.style.left = `${(hotspotProj.x * 0.5 + 0.5) * view.width}px`;
+        item.el.style.top = `${(-(hotspotProj.y * 0.5) + 0.5) * view.height}px`;
       } else {
         item.el.style.display = 'none';
       }
@@ -454,9 +513,27 @@
     }
   };
 
+  function updateCrossfade(now) {
+    if (!crossfade) return;
+    const progress = Math.min(1, (now - crossfade.startedAt) / crossfade.duration);
+    const eased = progress * progress * (3 - 2 * progress);
+    crossfade.toMat.opacity = eased;
+    crossfade.fromMat.opacity = 1 - eased;
+    if (progress >= 1) {
+      crossfade.toMat.opacity = 1;
+      crossfade.fromMat.opacity = 0;
+      if (crossfade.fromSphere !== crossfade.toSphere) {
+        crossfade.fromSphere.visible = false;
+      }
+      activeSphere = crossfade.toSphere === sphere1 ? 1 : 2;
+      crossfade = null;
+    }
+  }
+
   // Render Loop
-  function animate() {
+  function animate(now) {
     requestAnimationFrame(animate);
+    updateCrossfade(now);
 
     if (cameraTween && !isUserInteracting) {
       const elapsed = performance.now() - cameraTween.startedAt;
@@ -487,7 +564,7 @@
   }
 
   function syncRendererSize() {
-    const view = getViewportSize();
+    const view = measureViewport();
     camera.aspect = view.width / view.height;
     camera.updateProjectionMatrix();
     renderer.setSize(view.width, view.height);
@@ -504,8 +581,19 @@
     event.preventDefault();
   }, { passive: false });
 
+  function preloadCabinBar() {
+    document.querySelectorAll('.cabin-btn').forEach((button) => {
+      const onclick = button.getAttribute('onclick') || '';
+      const match = onclick.match(/selectScene\('([^']+)'\)/);
+      const node = match && window.CABIN_NODES[match[1]];
+      if (node) loadTexture(node.pano).catch(() => {});
+    });
+  }
+
   // Init
   renderMinimapPins();
   window.selectScene('suites_upright');
-  animate();
+  const scheduleIdle = window.requestIdleCallback || function (fn) { setTimeout(fn, 400); };
+  scheduleIdle(preloadCabinBar);
+  requestAnimationFrame(animate);
 })();
